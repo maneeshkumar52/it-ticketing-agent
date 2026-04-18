@@ -1,132 +1,117 @@
 # IT Ticketing Agent
 
-Professional-grade IT service ticketing system designed for production-style development with clear service boundaries, repeatable setup, and deterministic execution steps.
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## 1. Executive Overview
+Intelligent IT support agent for automated ticket triage, routing, auto-resolution, and escalation — powered by Azure OpenAI with Jira and Microsoft Teams integration.
 
-This repository provides:
-- A FastAPI service entrypoint for API-first integration
-- Structured modules for orchestration, domain logic, and integrations
-- Test scaffolding for incremental quality assurance
-- Environment-driven configuration for local, staging, and production workflows
+## Architecture
 
-## 2. Architecture
-
-### 2.1 Logical Architecture
-
-```txt
-Client / Integrator
-      |
-      v
-FastAPI API Layer (Uvicorn)
-      |
-      +--> Application Layer (routing, orchestration)
-      +--> Domain Layer (business rules)
-      +--> Integration Layer (Azure/OpenAI/search/messaging)
-      +--> Data/State Layer (configured adapters)
+```
+Incoming Ticket (API / Service Bus / Teams Webhook)
+        │
+        ▼
+┌───────────────────────────────────────┐
+│  FastAPI Service (:8000)              │
+│                                       │
+│  POST /tickets ──► TriageEngine       │──► Priority + category classification
+│       │                               │
+│       ▼                               │
+│  AutoResolver ──► Known-issue match   │──► Auto-resolve or escalate
+│       │                               │
+│       ├──► JiraClient                 │──► Create/update Jira tickets
+│       └──► TeamsClient                │──► Send Teams notifications
+└───────────────────────────────────────┘
+        │
+Azure Service Bus (async queue processing)
+        │
+Azure Functions (ticket_processor / teams_webhook)
 ```
 
-### 2.2 Runtime Components
-- API Server: FastAPI + Uvicorn
-- Configuration: environment variables and .env file
-- External Integrations: enabled per environment
-- Validation: pytest + e2e demo script
+## Key Features
 
-## 3. Repository Structure
+- **AI-Powered Triage** — GPT-4o classifies ticket priority (P1-P4) and category (network, hardware, software, access, other)
+- **Auto-Resolution** — Pattern matching against known issues for instant resolution
+- **Jira Integration** — Automatic ticket creation and status updates via Jira REST API
+- **Teams Notifications** — Webhook-based alerts for P1/P2 escalations
+- **Azure Service Bus** — Async ticket queue processing for high-volume workloads
+- **Azure Functions** — Serverless ticket processor and Teams webhook handler
+- **LOCAL_MODE** — Full pipeline runs locally without Azure dependencies
 
-```txt
+## Step-by-Step Flow
+
+### Step 1: Ticket Submission
+User submits a ticket via `POST /tickets` with subject, description, and contact info.
+
+### Step 2: AI Triage
+`triage_ticket()` sends the ticket to GPT-4o, which returns structured JSON with priority, category, suggested_resolution, and confidence_score.
+
+### Step 3: Auto-Resolution Check
+`AutoResolver` checks if the ticket matches a known issue pattern. If confidence is high enough, it auto-resolves and skips escalation.
+
+### Step 4: Jira Ticket Creation
+`JiraClient.create_issue()` creates a Jira ticket with triage metadata (priority, category, AI-suggested resolution).
+
+### Step 5: Teams Notification
+For P1/P2 tickets, `TeamsClient.send_notification()` posts an adaptive card to the configured Teams channel.
+
+### Step 6: Response
+Returns the triage result, Jira ticket key, and resolution status.
+
+## Repository Structure
+
+```
 it-ticketing-agent/
-  src/ or orchestrator/
-  tests/
-  infra/
-  requirements.txt
-  demo_e2e.py
+├── main.py                      # FastAPI app — /tickets endpoint
+├── shared/
+│   ├── triage.py                # AI triage engine (GPT-4o)
+│   ├── auto_resolve.py          # Known-issue auto-resolution
+│   ├── jira_client.py           # Jira REST API client
+│   ├── teams_client.py          # Teams webhook client
+│   ├── models.py                # Pydantic models
+│   └── config.py                # Environment settings
+├── functions/
+│   ├── ticket_processor/        # Azure Function — queue-triggered processing
+│   ├── teams_webhook/           # Azure Function — Teams webhook handler
+│   └── host.json
+├── tests/
+│   └── test_triage.py
+├── demo_e2e.py
+├── requirements.txt
+└── .env.example
 ```
 
-## 4. Prerequisites
-
-- Python 3.10+
-- pip 23+
-- Git
-- Optional cloud credentials for enabled connectors
-
-## 5. Local Setup
-
-1. Clone repository
+## Quick Start
 
 ```bash
 git clone https://github.com/maneeshkumar52/it-ticketing-agent.git
 cd it-ticketing-agent
-```
-
-2. Create virtual environment
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-3. Install dependencies
-
-```bash
-pip install --upgrade pip
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-4. Configure environment
-
-```bash
-cp .env.example .env 2>/dev/null || true
-```
-
-## 6. Run the Service
-
-```bash
+cp .env.example .env   # Set LOCAL_MODE=true for local testing
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Service endpoints:
-- API docs: http://127.0.0.1:8000/docs
-- OpenAPI JSON: http://127.0.0.1:8000/openapi.json
+## Configuration
 
-## 7. Validation and Test Flow
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AZURE_OPENAI_ENDPOINT` | Yes | Azure OpenAI endpoint |
+| `AZURE_OPENAI_DEPLOYMENT` | Yes | Model deployment (gpt-4o) |
+| `LOCAL_MODE` | No | Run without Azure dependencies (default: true) |
+| `JIRA_BASE_URL` | No | Jira instance URL |
+| `JIRA_PROJECT_KEY` | No | Jira project key (e.g., IT) |
+| `TEAMS_WEBHOOK_URL` | No | Teams incoming webhook URL |
+| `SERVICE_BUS_CONNECTION_STRING` | No | Azure Service Bus connection |
 
-1. Syntax validation
-
-```bash
-python3 -m compileall -q .
-```
-
-2. Unit/integration tests
+## Testing
 
 ```bash
 pytest -q
-```
-
-3. End-to-end demo
-
-```bash
 python demo_e2e.py
 ```
 
-## 8. Troubleshooting
+## License
 
-- Import or module errors:
-  - Ensure .venv is active
-  - Reinstall dependencies
-- Port already in use:
-  - Change --port value
-- Cloud connector failures:
-  - Validate credentials and service endpoints in .env
-
-## 9. Production Readiness Checklist
-
-- [ ] Environment variables externalized
-- [ ] Secrets not committed
-- [ ] Logging and tracing enabled
-- [ ] Test suite green in CI
-- [ ] Health checks configured in deployment
-
-## 10. License
-
-See LICENSE in this repository.
+MIT
